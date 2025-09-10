@@ -1,0 +1,69 @@
+package com.ranjan.viddown.screens.activationScreen.widgets
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material3.Icon
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+
+@Composable
+fun ActivationKeyInputField(){
+    var text by remember { mutableStateOf("") }
+    val isDark= isSystemInDarkTheme()
+
+
+    BasicTextField(
+        value = text,
+        onValueChange = { text = it },
+        textStyle = TextStyle(fontSize = 18.sp),
+        modifier = Modifier
+            .height(50.dp)
+            .background(if (isDark){Color(0xFFD9D9D9).copy(alpha = 0.2f)}else{Color.White}, shape = RoundedCornerShape(50.dp))
+            .padding(horizontal = 8.dp, vertical = 4.dp)
+            .width(320.dp),
+        decorationBox = { innerTextField ->
+            Row(
+                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+
+                ) {
+                // ✅ Actual Input Field
+                Box(modifier = Modifier.weight(1f)) {
+                    if (text.isEmpty()) {
+                        androidx.compose.material3.Text(
+                            "00 - 00 - 00",
+                            fontSize = 18.sp,
+                            color = if (isDark){Color.White}else{Color(0xFFD0D0D0)},
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                    innerTextField()
+                }
+
+            }
+        }
+    )
+}
