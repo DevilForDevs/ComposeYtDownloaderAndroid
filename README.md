@@ -15,4 +15,4 @@
 </p>
 ## 🎨 Design
 
-[View Design on Figma](https://www.figma.com/proto/lVJuNeZFf5llBbHm4v96Ud?node-id=0-1&t=3WF4vVkiXNMUmddf-6)
+[View Design on Figma](https://www.figma.com/design/nj2THt27suLdNyNf81hKIz/Video-Downloader--Sleek---Powerful-Mobile-App-UI%22--Community-?node-id=20-229&p=f&t=x6mCsdTq8ZDVsaFj-0)
