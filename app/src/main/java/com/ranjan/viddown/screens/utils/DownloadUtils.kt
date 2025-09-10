@@ -1,7 +1,12 @@
 package com.ranjan.viddown.screens.utils
 
 import android.content.Context
+import android.content.Intent
+import android.media.MediaScannerConnection
 import android.os.Environment
+import androidx.core.net.toUri
+import com.ranjan.viddown.dashedmuxer.DashedParser
+import com.ranjan.viddown.dashedmuxer.DashedWriter
 import com.ranjan.viddown.screens.models.DownloadItem
 import com.ranjan.viddown.screens.models.DownloadsViewModel
 import okhttp3.OkHttpClient
@@ -12,189 +17,207 @@ import java.io.FileOutputStream
 import kotlin.math.roundToInt
 
 
-fun addToDownloadsList(downloadList: DownloadsViewModel,title: String,videoFmt: JSONObject,audioFmt: JSONObject,thumbnail: String,context: Context){
-    val currentTimeMillis: Long = System.currentTimeMillis()
-    val movieFolder= Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES)
-    val musicFolder= Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC)
+fun addToDownloadsList(
+    downloadList: DownloadsViewModel,
+    title: String,
+    videoFmt: JSONObject,
+    audioFmt: JSONObject,
+    thumbnail: String,
+    context: Context
+) {
+    val currentTimeMillis = System.currentTimeMillis()
+    val qualtiyLabel=if (videoFmt.has("qualityLabel")){videoFmt.getString("qualityLabel")}else{""}
+    if (videoFmt==audioFmt){
+        val movieFolder = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC)
+        val audioFile = File("${movieFolder}/$title.mp3")
 
-    if (audioFmt==videoFmt){
-        val audioFile= File("$musicFolder/$title.mp3")
-        if (audioFile.exists()){
-            val downloadItem= DownloadItem(
-                fileName = title,
-                thumbnailUrl = thumbnail,
-                videoUrl = audioFmt.getString("url"),
-                audioUrl =audioFmt.getString("url"),
-                downloadStartTime = currentTimeMillis,
-                onDiskInitial = audioFile.length(),
-                onWebInitial = audioFmt.getString("contentLength").toLong(),
-                inRamInitial = 0
-            )
-            downloadList.addDownload(downloadItem)
-        }else{
-            val downloadItem= DownloadItem(
-                fileName = title,
-                thumbnailUrl = thumbnail,
-                videoUrl = audioFmt.getString("url"),
-                audioUrl =audioFmt.getString("url"),
-                downloadStartTime = currentTimeMillis,
-                onDiskInitial = 0L,
-                onWebInitial =audioFmt.getString("contentLength").toLong(),
-                inRamInitial = 0
-            )
-            downloadList.addDownload(downloadItem)
-        }
+        val videoUrl = videoFmt.getString("url")
+        val audioUrl = audioFmt.getString("url")
+
+        val videoContentLength = videoFmt.getString("contentLength").toLong()
+        val audioContentLength = audioFmt.getString("contentLength").toLong()
+
+        val downloadItem = DownloadItem(
+            fileName = title,
+            thumbnailUrl = thumbnail,
+            videoUrl = videoUrl,
+            audioUrl = audioUrl,
+            downloadStartTime = currentTimeMillis,
+            onDiskInitial = audioFile.length(),
+            onWebInitial = videoContentLength+audioContentLength,
+            inRamInitial = 0
+        )
+
+        downloadList.addDownload(downloadItem)
+
+        // Start combined download
+        downloadFiles(downloadList, downloadItem, audioFile, audioFile, audioContentLength,videoContentLength, context = context)
     }else{
-        val videofile= File("${context.filesDir}/$title(${videoFmt.getString("qualityLabel")}).mp4")
-        val audiofile= File("${context.filesDir}/$title.mp3")
-        if (videofile.exists()){
-            val downloadItem= DownloadItem(
-                fileName = title,
-                thumbnailUrl = thumbnail,
-                videoUrl = videoFmt.getString("url"),
-                audioUrl =audioFmt.getString("url"),
-                downloadStartTime = currentTimeMillis,
-                onDiskInitial = videofile.length(),
-                onWebInitial = videoFmt.getString("contentLength").toLong(),
-                inRamInitial = 0
-            )
-            downloadList.addDownload(downloadItem)
-            downloadFiles(downloadList ,downloadItem,videofile,audiofile,audioFmt.getString("contentLength").toLong())
-        }else{
-            val downloadItem= DownloadItem(
-                fileName = title,
-                thumbnailUrl = thumbnail,
-                videoUrl = videoFmt.getString("url"),
-                audioUrl =audioFmt.getString("url"),
-                downloadStartTime = currentTimeMillis,
-                onDiskInitial = 0L,
-                onWebInitial = videoFmt.getString("contentLength").toLong(),
-                inRamInitial = 0
-            )
-            downloadList.addDownload(downloadItem)
-            downloadFiles(downloadList,downloadItem,videofile,audiofile,audioFmt.getString("contentLength").toLong())
-        }
+        val videoFile = File("${context.filesDir}/$title($qualtiyLabel).mp4")
+        val audioFile = File("${context.filesDir}/$title.mp3")
 
+        val videoUrl = videoFmt.getString("url")
+        val audioUrl = audioFmt.getString("url")
 
+        val videoContentLength = videoFmt.getString("contentLength").toLong()
+        val audioContentLength = audioFmt.getString("contentLength").toLong()
+
+        val downloadItem = DownloadItem(
+            fileName = title,
+            thumbnailUrl = thumbnail,
+            videoUrl = videoUrl,
+            audioUrl = audioUrl,
+            downloadStartTime = currentTimeMillis,
+            onDiskInitial = videoFile.length(),
+            onWebInitial = videoContentLength+audioContentLength,
+            inRamInitial = 0
+        )
+
+        downloadList.addDownload(downloadItem)
+
+        // Start combined download
+        downloadFiles(downloadList, downloadItem, videoFile, audioFile, audioContentLength,videoContentLength,context)
     }
-
-
 }
 
-fun downloadFiles(downloadsViewModel: DownloadsViewModel,downloadItem: DownloadItem,videoFile: File,audioFile: File,audioContentLength: Long){
 
-    if (downloadItem.audioUrl==downloadItem.videoUrl){
-        println("audio fmt")
-    }else{
-        if (downloadItem.onDiskInitial==0L){
-            val fos= FileOutputStream(videoFile)
-            djDownloader(
-                url = downloadItem.videoUrl,
-                fos = fos,
-                onDisk = videoFile.length(),
-                totalBytes = downloadItem.onWebInitial,
-                progress = {inRam,speed->
-                    downloadsViewModel.updateProgress(
-                        downloadItem.fileName,
-                        inRam = inRam,
-                        speed =speed
+
+
+fun downloadFiles(
+    downloadsViewModel: DownloadsViewModel,
+    downloadItem: DownloadItem,
+    videoFile: File,
+    audioFile: File,
+    audioContentLength: Long,
+    videoContentLength: Long,context: Context
+) {
+
+    fun updateProgress(inRam: Long,speedText: String){
+        downloadsViewModel.updateProgress(downloadItem.fileName,inRam,speedText)
+    }
+
+    fun doMuxing(){
+        val movieFolder = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES)
+        val audioPraser= DashedParser(audioFile)
+        val videoPraser= DashedParser(videoFile)
+        audioPraser.parse()
+        videoPraser.parse()
+        val finalVideoFile=File("$movieFolder/${videoFile.name}")
+        val writter= DashedWriter(
+            finalVideoFile,
+            listOf(videoPraser, audioPraser),
+            progress = {
+               updateProgress(audioContentLength+videoContentLength,it)
+                if (it=="Finished"){
+                    updateProgress(0L,finalVideoFile.absolutePath)
+                    downloadsViewModel.setFinished(downloadItem.fileName)
+                    audioFile.delete()
+                    videoFile.delete()
+                    MediaScannerConnection.scanFile(context, arrayOf(finalVideoFile.absolutePath),null
+                    ) { path, uri -> println("scanned") }
+                    context.sendBroadcast(
+                        Intent(
+                            Intent.ACTION_MEDIA_SCANNER_SCAN_FILE,
+                            finalVideoFile.absolutePath.toUri()
+                        )
                     )
+                }
+            }
+        )
+        writter.buildNonFMp4()
+    }
+
+    fun downloadAudio(){
+        if (audioFile.exists()){
+            val fos= FileOutputStream(audioFile,true)
+            djDownloader(
+                url = downloadItem.audioUrl,
+                fos = fos,
+                totalBytes = audioContentLength,
+                onDisk = audioFile.length(),
+                progress = {inRam, speedText ->
+                    updateProgress(inRam,speedText)
 
                 }
 
             )
-            if (audioFile.exists()){
-                val audioFos= FileOutputStream(audioFile,true)
-                djDownloader(
-                    url = downloadItem.audioUrl,
-                    fos =audioFos,
-                    onDisk = audioFile.length(),
-                    totalBytes = audioContentLength,
-                    progress = {inRam,speed->
-                        downloadsViewModel.updateProgress(
-                            downloadItem.fileName,
-                            inRam = inRam,
-                            speed =speed
-                        )
-
-                    }
-
-                )
+            if (downloadItem.audioUrl!=downloadItem.videoUrl){
+                doMuxing()
             }else{
-                val audioFos= FileOutputStream(audioFile)
-                djDownloader(
-                    url = downloadItem.audioUrl,
-                    fos =audioFos,
-                    onDisk = 0L,
-                    totalBytes = audioContentLength,
-                    progress = {inRam,speed->
-                        downloadsViewModel.updateProgress(
-                            downloadItem.fileName,
-                            inRam = inRam,
-                            speed =speed
-                        )
-
-                    }
-
+                updateProgress(0L,audioFile.absolutePath)
+                downloadsViewModel.setFinished(downloadItem.fileName)
+                MediaScannerConnection.scanFile(context, arrayOf(audioFile.absolutePath),null
+                ) { path, uri -> println("scanned") }
+                context.sendBroadcast(
+                    Intent(
+                        Intent.ACTION_MEDIA_SCANNER_SCAN_FILE,
+                        audioFile.absolutePath.toUri()
+                    )
                 )
             }
 
         }else{
+            val fos= FileOutputStream(audioFile)
+            djDownloader(
+                url = downloadItem.audioUrl,
+                fos = fos,
+                totalBytes = audioContentLength,
+                onDisk =0L,
+                progress = {inRam, speedText ->
+                    updateProgress(inRam,speedText)
+                }
+            )
+            if (downloadItem.audioUrl!=downloadItem.videoUrl){
+                doMuxing()
+            }else{
+                updateProgress(0L,audioFile.absolutePath)
+                downloadsViewModel.setFinished(downloadItem.fileName)
+                MediaScannerConnection.scanFile(context, arrayOf(audioFile.absolutePath),null
+                ) { path, uri -> println("scanned") }
+                context.sendBroadcast(
+                    Intent(
+                        Intent.ACTION_MEDIA_SCANNER_SCAN_FILE,
+                        audioFile.absolutePath.toUri()
+                    )
+                )
+            }
+        }
+
+    }
+
+    if (downloadItem.audioUrl==downloadItem.videoUrl){
+        downloadAudio()
+    }else{
+        if (videoFile.exists()){
             val fos= FileOutputStream(videoFile,true)
             djDownloader(
                 url = downloadItem.videoUrl,
                 fos = fos,
+                totalBytes = videoContentLength,
                 onDisk = videoFile.length(),
-                totalBytes = downloadItem.onWebInitial,
-                progress = {inRam,speed->
-                    downloadsViewModel.updateProgress(
-                        downloadItem.fileName,
-                        inRam = inRam,
-                        speed =speed
-                    )
-
+                progress = {inRam, speedText ->
+                    updateProgress(inRam,speedText)
                 }
             )
-            if (audioFile.exists()){
-                val audioFos= FileOutputStream(audioFile,true)
-                djDownloader(
-                    url = downloadItem.audioUrl,
-                    fos =audioFos,
-                    onDisk = audioFile.length(),
-                    totalBytes = audioContentLength,
-                    progress = {inRam,speed->
-                        downloadsViewModel.updateProgress(
-                            downloadItem.fileName,
-                            inRam = inRam,
-                            speed =speed
-                        )
-
-                    }
-
-                )
-            }else{
-                val audioFos= FileOutputStream(audioFile)
-                djDownloader(
-                    url = downloadItem.audioUrl,
-                    fos =audioFos,
-                    onDisk = 0L,
-                    totalBytes = audioContentLength,
-                    progress = {inRam,speed->
-                        downloadsViewModel.updateProgress(
-                            downloadItem.fileName,
-                            inRam = inRam,
-                            speed =speed
-                        )
-
-                    }
-
-                )
-            }
+            downloadAudio()
+        }else{
+            val fos= FileOutputStream(videoFile)
+            djDownloader(
+                url = downloadItem.videoUrl,
+                fos = fos,
+                totalBytes = videoContentLength,
+                onDisk =0L,
+                progress = {inRam, speedText ->
+                    updateProgress(inRam,speedText)
+                }
+            )
+            downloadAudio()
         }
-
-
     }
+
 }
+
+
 fun djDownloader(
     url: String,
     fos: FileOutputStream,
@@ -236,7 +259,7 @@ fun djDownloader(
                     // Call progress callback every second
                     if (now - lastTime >= 1000) {
                         val speedText = convertSpeed(speedBytes)
-                        progress(currentDownloaded, speedText)
+                        progress(currentDownloaded, "Speed - $speedText")
                         speedBytes = 0
                         lastTime = now
                     }
@@ -245,7 +268,7 @@ fun djDownloader(
                 // Final update after finishing the chunk
                 val finalDownloaded = onDisk + downloadedInChunk
                 val speedText = convertSpeed(speedBytes)
-                progress(finalDownloaded, speedText)
+                progress(finalDownloaded, "Speed - $speedText")
 
                 // Continue downloading if not finished
                 if (finalDownloaded < totalBytes) {
